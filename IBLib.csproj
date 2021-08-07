@@ -84,6 +84,6 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>c:\dll\1.bat</PostBuildEvent>
+    <PostBuildEvent>c:\dll\reg64.bat</PostBuildEvent>
   </PropertyGroup>
 </Project>

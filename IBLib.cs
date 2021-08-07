@@ -25,7 +25,7 @@ namespace IBLib
         void AskForRTBar(int symbolID, string WhatToShow);
         void AskForHistBar(int symbolID, string WhatToShow, bool keepUpToDate);
         void AskForSomeHistBar(int symbolID, string WhatToShow);
-        void SaveHistBars(int symbolID, string WhatToShow, string durationString, string saveFileName);
+        void SaveHistBars(int symbolID, string WhatToShow, string durationString, string saveFileName, int decimals);
         void StopRTBar();
         string GetBarsAsText(int symbolID);
         void GetBarsAsRecord(int symbolID, out RTbars rtbars);
@@ -132,9 +132,10 @@ namespace IBLib
             public int RTbarReqId;
             public int histBarReqId;
             public int someHistBarReqId;
+            
             public int saveHistBarReqId;
-
             public string saveFileName;
+            public int saveDecimals;
 
             //public mBar[] histBars;
         }
@@ -309,7 +310,12 @@ namespace IBLib
                     double low = l.low;
                     double close = l.close;
 
-                    string str = date + ";" + time + ";" + open + ";" + high + ";" + low + ";" + close + Environment.NewLine;
+                    string sopen = string.Format("{0:f"+all[symbolID].saveDecimals+"}", open);
+                    string shigh = string.Format("{0:f" + all[symbolID].saveDecimals + "}", high);
+                    string slow = string.Format("{0:f" + all[symbolID].saveDecimals + "}", low);
+                    string sclose = string.Format("{0:f" + all[symbolID].saveDecimals + "}", close);
+
+                    string str = s.name + ";" + date + ";" + time + ";" + sopen + ";" + shigh + ";" + slow + ";" + sclose + Environment.NewLine;
                     File.AppendAllText(all[symbolID].saveFileName, str);
                 }
             }
@@ -546,7 +552,7 @@ namespace IBLib
             ibClient.ClientSocket.reqHistoricalData(all[symbolID].someHistBarReqId, all[symbolID].contract, endDateTime, durationString, barSizeSetting, WhatToShow, useRTH, 2, keepUpToDate, new List<TagValue>());
         }
 
-        public void SaveHistBars(int symbolID, string WhatToShow, string durationString, string saveFileName)
+        public void SaveHistBars(int symbolID, string WhatToShow, string durationString, string saveFileName, int decimals)
         {
             if (saveFileName == "") return;
 
@@ -558,6 +564,7 @@ namespace IBLib
             int req = getReqId();
             all[symbolID].saveHistBarReqId = req;
             all[symbolID].saveFileName = saveFileName;
+            all[symbolID].saveDecimals = decimals;
 
             //saveBars[symbolID].Clear();
 
