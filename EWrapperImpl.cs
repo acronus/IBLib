@@ -209,11 +209,17 @@ namespace Samples
         }
         //! [accountdownloadend]
 
+
+        public event Action<OrderStatusMessage> OrderStatus;
         //! [orderstatus]
         public virtual void orderStatus(int orderId, string status, double filled, double remaining, double avgFillPrice, int permId, int parentId, double lastFillPrice, int clientId, string whyHeld, double mktCapPrice)
         {
-            Console.WriteLine("OrderStatus. Id: " + orderId + ", Status: " + status + ", Filled: " + filled + ", Remaining: " + remaining
-                + ", AvgFillPrice: " + avgFillPrice + ", PermId: " + permId + ", ParentId: " + parentId + ", LastFillPrice: " + lastFillPrice + ", ClientId: " + clientId + ", WhyHeld: " + whyHeld + ", MktCapPrice: " + mktCapPrice);
+            // Console.WriteLine("OrderStatus. Id: " + orderId + ", Status: " + status + ", Filled: " + filled + ", Remaining: " + remaining
+            //+ ", AvgFillPrice: " + avgFillPrice + ", PermId: " + permId + ", ParentId: " + parentId + ", LastFillPrice: " + lastFillPrice + ", ClientId: " + clientId + ", WhyHeld: " + whyHeld + ", MktCapPrice: " + mktCapPrice);
+            var tmp = OrderStatus;
+
+            if (tmp != null)
+                sc.Post((t) => tmp(new OrderStatusMessage(orderId, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld, mktCapPrice)), null);
         }
         //! [orderstatus]
 
@@ -362,10 +368,15 @@ namespace Samples
         }
         //! [contractdetailsend]
 
+        public event Action<ExecutionMessage> ExecDetails;
         //! [execdetails]
         public virtual void execDetails(int reqId, Contract contract, Execution execution)
         {
-            Console.WriteLine("ExecDetails. " + reqId + " - " + contract.Symbol + ", " + contract.SecType + ", " + contract.Currency + " - " + execution.ExecId + ", " + execution.OrderId + ", " + execution.Shares + ", " + execution.LastLiquidity);
+            // Console.WriteLine("ExecDetails. " + reqId + " - " + contract.Symbol + ", " + contract.SecType + ", " + contract.Currency + " - " + execution.ExecId + ", " + execution.OrderId + ", " + execution.Shares + ", " + execution.LastLiquidity);
+            var tmp = ExecDetails;
+
+            if (tmp != null)
+                sc.Post((t) => tmp(new ExecutionMessage(reqId, contract, execution)), null);
         }
         //! [execdetails]
 
