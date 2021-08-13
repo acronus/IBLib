@@ -18,16 +18,17 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
+    <OutputPath>..\..\..\..\..\dll\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <RegisterForComInterop>true</RegisterForComInterop>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <RegisterForComInterop>true</RegisterForComInterop>
@@ -68,19 +69,21 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ContractDetailsEndMessage.cs" />
-    <Compile Include="ContractDetailsMessage.cs" />
+    <Compile Include="messages\ContractDetailsEndMessage.cs" />
+    <Compile Include="messages\ContractDetailsMessage.cs" />
     <Compile Include="EWrapperImpl.cs" />
-    <Compile Include="HistoricalDataEndMessage.cs" />
-    <Compile Include="HistoricalDataMessage.cs" />
+    <Compile Include="messages\ExecutionMessage.cs" />
+    <Compile Include="messages\HistoricalDataEndMessage.cs" />
+    <Compile Include="messages\HistoricalDataMessage.cs" />
     <Compile Include="IBLib.cs" />
-    <Compile Include="MarketDataMessage.cs" />
-    <Compile Include="OpenOrderMessage.cs" />
-    <Compile Include="OrderMessage.cs" />
-    <Compile Include="PositionMessage.cs" />
+    <Compile Include="messages\MarketDataMessage.cs" />
+    <Compile Include="messages\OpenOrderMessage.cs" />
+    <Compile Include="messages\OrderMessage.cs" />
+    <Compile Include="messages\OrderStatusMessage.cs" />
+    <Compile Include="messages\PositionMessage.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RealTimeBarMessage.cs" />
-    <Compile Include="TickPriceMessage.cs" />
+    <Compile Include="messages\RealTimeBarMessage.cs" />
+    <Compile Include="messages\TickPriceMessage.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

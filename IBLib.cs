@@ -7,6 +7,9 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Timers;
+using System.Windows;
+using System.Diagnostics;
 using static IBLib.Api;
 
 namespace IBLib
@@ -25,6 +28,8 @@ namespace IBLib
         void AskForRTBar(int symbolID, string WhatToShow);
         void AskForHistBar(int symbolID, string WhatToShow, bool keepUpToDate);
         void AskForSomeHistBar(int symbolID, string WhatToShow);
+        void AskForPositions();
+        void AskForOpenOrders();
         void SaveHistBars(int symbolID, string WhatToShow, string durationString, string saveFileName, int decimals);
         void StopRTBar();
         string GetBarsAsText(int symbolID);
@@ -32,24 +37,19 @@ namespace IBLib
         void GetBarsAsArrays(int symbolID, out string[] date, out string[] time, out double[] open, out double[] high,
             out double[] low, out double[] close);
         int GetNewOrderID();
-        void PlaceOrderByRecord(int orderID, Contract contract, Order order);
-        void PlaceOrder(string Symbol, string SecType, string Exchange, string Currency,
-            string LocalSymbol, bool IncludeExpired, string LastTradeDateOrContractMonth,
-            string PrimaryExch, string PUTorCALL, double Strike, string Multiplier,
-            int OrderID, string Action, string OrderType, int TotalQuantity, double LmtPrice);
+        void PlaceOrder(int orderID, Contract contract, Order order);
         void CancelOrder(int id);
         void CancelAllOrders();
         void CancelOrdersBySymbol(string symbol);
         void GetBuySellCount(string symbol, out int buy, out int sell);
-        void AskPositions();
         Order GetOrder(string Action, string OrderType, double TotalQuantity, double LmtPrice);
         Contract GetContractByConID(int conID);
+        Contract GetContractBySymbolID(int symbolID);
         Contract GetContract(string Symbol, string SecType, string Exchange, string Currency,
             string LocalSymbol, bool IncludeExpired, string LastTradeDateOrContractMonth, string PrimaryExch,
             string PUTorCALL, double Strike, string Multiplier);
         Symbol GetAll(int id);
         void GetContractDetails(int symbolID);
-        string GetDict();
         void AddSymbol(int id, string name, Contract contract);
         string GetErrors();
         void GetHistBarsAsArrays(int symbolID, out string[] date, out string[] time, out double[] open, out double[] high,
@@ -72,17 +72,6 @@ namespace IBLib
         public int clientID;
         public int baseID = 1000000;
         public int ReqId = 1;
-
-        /*
-        string symbolToCancel = "";
-        string symbolToCntOrders = "";
-
-        int cntBUYorders = -1;
-        int cntSELLorders = -1;
-
-        int tBUY = 0;
-        int tSELL = 0;
-        */
 
         public struct lBar
         {
@@ -126,18 +115,20 @@ namespace IBLib
             public Contract contract;
             public ContractDetails contractDetails;
             public double lastprice;
+            public double position;
+            public double buyVolume;
+            public double sellVolume;
 
             public int contrReqId;
             public int priceReqId;
             public int RTbarReqId;
             public int histBarReqId;
             public int someHistBarReqId;
-            
+            public int execId;
+
             public int saveHistBarReqId;
             public string saveFileName;
             public int saveDecimals;
-
-            //public mBar[] histBars;
         }
 
         public struct SymbolUtility
@@ -147,14 +138,6 @@ namespace IBLib
             public Contract contract;
             public ContractDetails contractDetails;
 
-            /*
-            public int contrReqId;
-            public int priceReqId;
-            public int RTbarReqId;
-            public int histBarReqId;
-            public int someHistBarReqId;
-            */
-
             public bool startMinBar;
             public bool endMinBar;
             public mBar[] bars;
@@ -162,15 +145,37 @@ namespace IBLib
             public mBar[] minbars;
         }
 
-        Symbol[] all = new Symbol[1000];
-        SymbolUtility[] uall = new SymbolUtility[1000];
+        public struct OpenOrder
+        {
+            public int permId;
+            public double totalquantity;
+            public Contract contract;
+            public Order order;
+            public OrderState state;
+        }
+
+        public struct Trade
+        {
+            public int permId;
+            public string symbol;
+            public double filled;
+            public Contract contract;
+            public Execution execution;
+        }
+
+        Symbol[] all = new Symbol[30];
+        SymbolUtility[] uall = new SymbolUtility[30];
 
         StringBuilder errors = new StringBuilder();
 
-        Dictionary<int, string> contracts = new Dictionary<int, string>();
-
         Dictionary<long, List<lBar>> histBars = new Dictionary<long, List<lBar>>();
         Dictionary<long, List<lBar>> realBars = new Dictionary<long, List<lBar>>();
+
+        Dictionary<int, OpenOrder> openOrders = new Dictionary<int, OpenOrder>();
+        Dictionary<string, Trade> trades = new Dictionary<string, Trade>();
+
+        //bool connected = true;
+        //Stopwatch stopwatch;
 
         public Api()
         {
@@ -178,18 +183,173 @@ namespace IBLib
             ibClient.RealtimeBar += IbClient_RealtimeBar;
             ibClient.OpenOrder += IbClient_OpenOrder;
             ibClient.OpenOrderEnd += IbClient_OpenOrderEnd;
+            ibClient.OrderStatus += IbClient_OrderStatus;
             ibClient.Position += IbClient_Position;
             ibClient.PositionEnd += IbClient_PositionEnd;
+            ibClient.ExecDetails += IbClient_ExecDetails;
             ibClient.ContractDetails += IbClient_ContractDetails;
             ibClient.Error += IbClient_Error;
             ibClient.HistoricalData += IbClient_HistoricalData;
             ibClient.HistoricalDataUpdate += IbClient_HistoricalDataUpdate;
             ibClient.HistoricalDataEnd += IbClient_HistoricalDataEnd;
+
+            /*
+            System.Timers.Timer aTimer = new System.Timers.Timer();
+            aTimer.Elapsed += new ElapsedEventHandler(OnTimedEventA);
+            aTimer.Interval = 5000;
+            aTimer.Enabled = true;
+            */
+        }
+
+        private void IbClient_ExecDetails(ExecutionMessage exec)
+        {
+            Contract con = exec.Contract;
+            Execution ex = exec.Execution;
+            string exid = ex.ExecId;
+
+            // only live orders
+            if (openOrders.ContainsKey(ex.PermId))
+            {
+                if (!trades.ContainsKey(exid))
+                {
+                    Trade t = new Trade();
+                    t.permId = ex.PermId;
+                    t.symbol = con.Symbol;
+                    t.filled = ex.Shares;
+                    t.contract = con;
+                    t.execution = ex;
+
+                    trades.Add(exid, t);
+
+                    //recalc volumes
+                    CalcOpenOrdersVolume(con.Symbol);
+                }
+            }
+        }
+
+        private void IbClient_OpenOrderEnd()
+        {
+            ibClient.ClientSocket.reqExecutions(getReqId(), new ExecutionFilter());
+        }
+
+        private void IbClient_OpenOrder(OpenOrderMessage orderMessage)
+        {
+            OpenOrder opo = new OpenOrder();
+            opo.contract = orderMessage.Contract;
+            opo.order = orderMessage.Order;
+            opo.state = orderMessage.OrderState;
+            opo.permId = orderMessage.Order.PermId;
+            opo.totalquantity = orderMessage.Order.TotalQuantity;
+
+            if (!openOrders.ContainsKey(orderMessage.Order.PermId) && (orderMessage.OrderState.Status == "Submitted"))
+            {
+                lock (openOrders)
+                {
+                    openOrders.Add(orderMessage.Order.PermId, opo);
+                }
+            }/*
+            else
+            {
+                    openOrders[openOrder.Order.PermId] = opo;
+            }*/
+
+            //Remove cancelled or completely filled order
+            if (openOrders.ContainsKey(orderMessage.Order.PermId) &&
+                ((orderMessage.OrderState.Status == "Filled") || (orderMessage.OrderState.Status == "Cancelled")))
+            {
+                lock (openOrders)
+                {
+                    openOrders.Remove(orderMessage.Order.PermId);
+                }
+            }
+
+            // recalc volumes
+            CalcOpenOrdersVolume(opo.contract.Symbol);
+        }
+
+        private void IbClient_OrderStatus(OrderStatusMessage status)
+        {
+            // Remove cancelled
+            if (status.Status == "Cancelled")
+            {
+                if (openOrders.ContainsKey(status.PermId))
+                {
+                    OpenOrder opo = openOrders[status.PermId];
+                    lock (openOrders)
+                    {   
+                        openOrders.Remove(status.PermId);
+                    }
+                    CalcOpenOrdersVolume(opo.contract.Symbol);
+                }
+            }
+        }
+
+        private void CalcOpenOrdersVolume(string symbol)
+        {
+            double buyvolume = 0;
+            double sellvolume = 0;
+
+            foreach (OpenOrder o in openOrders.Values.Where(o => o.contract.Symbol == symbol))
+            {
+                if (o.order.Action == "BUY")
+                {
+                    buyvolume += o.totalquantity - CalcTradesByPermId(o.permId);
+                }
+                else
+                {
+                    sellvolume += o.totalquantity - CalcTradesByPermId(o.permId);
+                }
+            }
+
+            foreach (Symbol s in all.Where(s => s.id > 0).Where(a => a.contract.Symbol == symbol))
+            {
+                all[s.id].buyVolume = buyvolume;
+                all[s.id].sellVolume = sellvolume;
+            }
+        }
+
+        private double CalcTradesByPermId(int permID)
+        {
+            double filled = 0;
+
+            foreach (Trade tr in trades.Values.Where(t => t.permId == permID))
+            {
+                filled += tr.filled;
+            }
+
+            return filled;
+        }
+
+        private void OnTimedEventA(object source, ElapsedEventArgs e)
+        {
+            /*
+            //MessageBox.Show("123");
+            if (!IsConnected()) // connection lost
+            {
+                connected = false;
+
+                DateTime localDate = DateTime.Now;
+
+                errors.Append("IBLib: Connection lost at " + localDate.ToString() + Environment.NewLine);
+                //stopwatch = Stopwatch.StartNew();
+            }
+
+            if (IsConnected() && (connected == false)) // connection reestablished
+            {
+                connected = true;
+                DateTime localDate = DateTime.Now;
+                errors.Append("IBLib: Connection reestablished at " + localDate.ToString() + Environment.NewLine);
+
+                foreach (Symbol s in all.Where(s => s.id>0))
+                {
+                    //
+                }
+            }*/
         }
 
         private void IbClient_HistoricalDataUpdate(HistoricalDataMessage bar)
         {
-            foreach (Symbol s in all)
+            foreach (Symbol s in all.Where(s => s.id > 0))
             {
                 if (s.histBarReqId == bar.RequestId)
                 {
@@ -207,13 +367,6 @@ namespace IBLib
                         if (r.open > 0)
                             realBars[symbolID].Add(r);
                     }
-
-                    /*
-                    if (realBars[symbolID].Count() > 200)
-                    {
-                        histBars[symbolID].Clear();
-                        realBars[symbolID].RemoveAt(0);
-                    }*/
 
                 }
             }
@@ -260,7 +413,7 @@ namespace IBLib
 
         private void IbClient_HistoricalData(HistoricalDataMessage bar)
         {
-            foreach (Symbol s in all)
+            foreach (Symbol s in all.Where(s => s.id > 0))
             {
 
                 int symbolID = s.id;
@@ -289,13 +442,6 @@ namespace IBLib
                             }
                         }
                     }
-
-                    /*
-                    if (realBars[symbolID].Count() > 200)
-                    {
-                        histBars[symbolID].Clear();
-                        realBars[symbolID].RemoveAt(0);
-                    }*/
                 }
 
                 if (s.saveHistBarReqId == bar.RequestId)
@@ -310,12 +456,12 @@ namespace IBLib
                     double low = l.low;
                     double close = l.close;
 
-                    string sopen = string.Format("{0:f"+all[symbolID].saveDecimals+"}", open);
+                    string sopen = string.Format("{0:f" + all[symbolID].saveDecimals + "}", open);
                     string shigh = string.Format("{0:f" + all[symbolID].saveDecimals + "}", high);
                     string slow = string.Format("{0:f" + all[symbolID].saveDecimals + "}", low);
                     string sclose = string.Format("{0:f" + all[symbolID].saveDecimals + "}", close);
 
-                    string str = s.name + ";" + date + ";" + time + ";" + sopen + ";" + shigh + ";" + slow + ";" + sclose + Environment.NewLine;
+                    string str = s.name + ";1;" + date + ";" + time + ";" + sopen + ";" + shigh + ";" + slow + ";" + sclose + ";" + Environment.NewLine;
                     File.AppendAllText(all[symbolID].saveFileName, str);
                 }
             }
@@ -332,7 +478,7 @@ namespace IBLib
 
         private void IbClient_ContractDetails(ContractDetailsMessage contract)
         {
-            foreach (Symbol s in all)
+            foreach (Symbol s in all.Where(s => s.id > 0))
             {
                 if (s.contrReqId == contract.RequestId)
                 {
@@ -350,41 +496,21 @@ namespace IBLib
 
         private void IbClient_Position(PositionMessage Position)
         {
-
-        }
-
-        private void IbClient_OpenOrderEnd()
-        {
-            //symbolToCancel = "";
-
-            /*
-            cntBUYorders = tBUY;
-            cntSELLorders = tSELL;
-            symbolToCntOrders = "";
-            tBUY = 0;
-            tSELL = 0;*/
-
-            //tcs.SetResult(true);
-        }
-
-        private void IbClient_OpenOrder(OpenOrderMessage OpenOrder)
-        {
-            // Count BUY and SELL
-            /*if (OpenOrder.Contract.Symbol == symbolToCntOrders)
+            foreach (Symbol s in all.Where(s => s.id > 0))
             {
-                if (OpenOrder.Order.Action == "BUY") tBUY++; else tSELL++;
+                //MessageBox.Show(s.name);
+                Contract c = s.contract;
+                if ((c != null) && (c.Symbol == Position.Contract.Symbol))
+                {
+                    all[s.id].position = Position.Position;
+                }
             }
-
-            // Cancel orders
-            if (OpenOrder.Contract.Symbol == symbolToCancel)
-            {
-                ibClient.ClientSocket.cancelOrder(OpenOrder.OrderId);
-            }*/
         }
+
 
         private void IbClient_RealtimeBar(RealTimeBarMessage bar)
         {
-            foreach (Symbol s in all)
+            foreach (Symbol s in all.Where(s => s.id > 0))
             {
                 if (s.RTbarReqId == bar.RequestId)
                 {
@@ -418,7 +544,7 @@ namespace IBLib
         {
             if ((dataMessage.Field == TickType.LAST) || (dataMessage.Field == TickType.DELAYED_LAST))
             {
-                foreach (Symbol s in all)
+                foreach (Symbol s in all.Where(s => s.id > 0))
                 {
                     if (s.priceReqId == dataMessage.RequestId)
                     {
@@ -469,6 +595,11 @@ namespace IBLib
             if (IsConnected())
             {
                 ibClient.ClientSocket.eDisconnect();
+                all = new Symbol[30];
+                uall = new SymbolUtility[30];
+                histBars = new Dictionary<long, List<lBar>>();
+                realBars = new Dictionary<long, List<lBar>>();
+                openOrders = new Dictionary<int, OpenOrder>();
             }
         }
 
@@ -667,35 +798,9 @@ namespace IBLib
             return 0;
         }
 
-        public void PlaceOrderByRecord(int orderID, Contract contract, Order order)
+        public void PlaceOrder(int orderID, Contract contract, Order order)
         {
             ibClient.ClientSocket.placeOrder(orderID, contract, order);
-            ibClient.NextOrderId++;
-        }
-
-        public void PlaceOrder(string Symbol, string SecType, string Exchange, string Currency,
-            string LocalSymbol, bool IncludeExpired, string LastTradeDateOrContractMonth,
-            string PrimaryExch, string PUTorCALL, double Strike, string Multiplier,
-            int OrderID, string Action, string OrderType, int TotalQuantity, double LmtPrice)
-        {
-            Contract contract = new Contract();
-            contract.Symbol = Symbol;
-            contract.SecType = SecType;
-            contract.Exchange = Exchange;
-            contract.Currency = Currency;
-            contract.LocalSymbol = LocalSymbol;
-            contract.IncludeExpired = IncludeExpired;
-            contract.LastTradeDateOrContractMonth = LastTradeDateOrContractMonth;
-            contract.PrimaryExch = PrimaryExch;
-
-            Order order = new Order();
-            order.Action = Action; //BUY or SELL
-            order.OrderType = OrderType; // LMT
-            order.TotalQuantity = TotalQuantity;
-            order.LmtPrice = LmtPrice;
-            order.Tif = "GTC";
-
-            ibClient.ClientSocket.placeOrder(OrderID, contract, order);
             ibClient.NextOrderId++;
         }
 
@@ -712,7 +817,11 @@ namespace IBLib
         public void CancelOrdersBySymbol(string symbol)
         {
             //symbolToCancel = symbol;
-            ibClient.ClientSocket.reqOpenOrders();
+            //ibClient.ClientSocket.reqOpenOrders();
+            foreach (OpenOrder o in openOrders.Values.Where(o => o.contract.Symbol == symbol))
+            {
+                ibClient.ClientSocket.cancelOrder(o.order.OrderId);
+            }
         }
 
         public void GetBuySellCount(string symbol, out int buy, out int sell)
@@ -727,18 +836,14 @@ namespace IBLib
             //cntSELLorders = -1;
         }
 
-        /*
-        public async Task reqOpenOrders()
-        {
-            //ibClient.ClientSocket.reqOpenOrders();
-            //await tcs.Task;
-            return;
-        }*/
-
-        public void AskPositions()
+        public void AskForPositions()
         {
             ibClient.ClientSocket.reqPositions();
+        }
 
+        public void AskForOpenOrders()
+        {
+            ibClient.ClientSocket.reqOpenOrders();
         }
 
         public Order GetOrder(string Action, string OrderType, double TotalQuantity, double LmtPrice)
@@ -749,8 +854,16 @@ namespace IBLib
             order.TotalQuantity = TotalQuantity;
             order.LmtPrice = LmtPrice;
             order.Tif = "GTC";
+            order.Transmit = true;
 
             return order;
+        }
+
+        public Contract GetContractBySymbolID(int symbolID)
+        {
+            Contract contract = all[symbolID].contract;
+
+            return contract;
         }
 
         public Contract GetContractByConID(int conID)
@@ -794,18 +907,6 @@ namespace IBLib
         public int getReqId()
         {
             return int.Parse(DateTime.Now.ToString("HHmmss")) * (clientID + 1) * 10 + ++ReqId;
-        }
-
-        public string GetDict()
-        {
-            string txt = "";
-
-            foreach (var d in contracts)
-            {
-                txt += d.Key + ";" + d.Value + "   ";
-            }
-
-            return txt;
         }
 
         public void AddSymbol(int id, string name, Contract contract)
@@ -852,7 +953,7 @@ namespace IBLib
             realBars.Add(id, rbars);
 
             all[id] = s;
-            uall[id] = u;
+            //uall[id] = u;
         }
 
         public string GetErrors()
